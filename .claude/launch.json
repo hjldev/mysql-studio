@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-bridge",
+      "runtimeExecutable": "./src-tauri/target/debug/web-bridge",
+      "runtimeArgs": [],
+      "env": { "MYSQL_STUDIO_DATA": ".dev-data/connections.json" },
+      "port": 1430
+    },
+    {
+      "name": "vite",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 1420
+    }
+  ]
+}

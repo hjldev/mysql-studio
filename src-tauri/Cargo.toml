@@ -1,0 +1,42 @@
+[package]
+name = "mysql-studio"
+version = "0.1.0"
+description = "A Navicat-like MySQL management tool built with Tauri"
+edition = "2021"
+default-run = "mysql-studio"
+
+[lib]
+name = "mysql_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "mysql-studio"
+path = "src/main.rs"
+
+# Dev-only HTTP bridge so the UI can be exercised in a plain browser.
+[[bin]]
+name = "web-bridge"
+path = "src/bin/web_bridge.rs"
+required-features = ["web-bridge"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+mysql_async = { version = "0.37", default-features = false, features = ["default-rustls-ring"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"] }
+uuid = { version = "1", features = ["v4"] }
+axum = { version = "0.8", optional = true }
+tower-http = { version = "0.6", features = ["cors"], optional = true }
+
+[features]
+web-bridge = ["dep:axum", "dep:tower-http"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
