@@ -65,20 +65,49 @@ pub struct ExecuteResponse {
     pub database: Option<String>,
 }
 
+/// Unset fields are omitted from JSON: name-only listings of huge schemas stay small.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TableMeta {
     pub name: String,
     pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rows: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data_length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub index_length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_increment: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub create_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub update_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub collation: Option<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub comment: String,
+}
+
+impl TableMeta {
+    /// A table known only by name and type; statistics are loaded separately.
+    pub fn named(name: String, kind: String) -> Self {
+        Self {
+            name,
+            kind,
+            engine: None,
+            rows: None,
+            data_length: None,
+            index_length: None,
+            auto_increment: None,
+            create_time: None,
+            update_time: None,
+            collation: None,
+            comment: String::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug)]

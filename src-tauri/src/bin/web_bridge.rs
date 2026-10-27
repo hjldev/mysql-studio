@@ -50,7 +50,10 @@ async fn dispatch(st: &AppState, cmd: &str, a: &Value) -> Result<Value, String> 
                 &s(a, "kind")?
             )
             .await?),
-        "schema_columns" => ok!(st.schema_columns(&s(a, "connId")?, &s(a, "db")?).await?),
+        "schema_columns" => ok!(st
+            .schema_columns(&s(a, "connId")?, &s(a, "db")?, arg(a, "tables")?)
+            .await?),
+        "table_stats" => ok!(st.table_stats(&s(a, "connId")?, &s(a, "db")?).await?),
         "list_charsets" => ok!(st.list_charsets(&s(a, "connId")?).await?),
         "execute_query" => {
             let session: Option<String> = arg(a, "sessionId")?;

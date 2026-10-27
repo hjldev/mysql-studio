@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api, errorText } from "./api";
 import { confirmDialog, toast } from "./ui";
-import type { ConnectionConfig, DbObjects, ServerInfo, Tab } from "./types";
+import type { ConnectionConfig, DbObjects, ServerInfo, Tab, TableMeta } from "./types";
 import { uid } from "./utils";
 
 export interface ConnState {
@@ -35,7 +35,11 @@ interface Store {
   conn: Record<string, ConnState>;
   objects: Record<string, DbObjects | undefined>;
   loadingObjects: Record<string, boolean>;
+  /** Per database: column names of the tables fetched so far (for autocompletion). */
   schemaCols: Record<string, Record<string, string[]> | undefined>;
+  /** Per database: size/row statistics by table name, loaded on demand. */
+  tableStats: Record<string, Record<string, TableMeta> | undefined>;
+  loadingStats: Record<string, boolean>;
   expanded: Record<string, boolean>;
   selected: TreeSel | null;
   tabs: Tab[];
@@ -53,6 +57,8 @@ interface Store {
   refreshDatabases(id: string): Promise<void>;
   loadObjects(connId: string, db: string, force?: boolean): Promise<DbObjects | undefined>;
   loadSchemaCols(connId: string, db: string): Promise<void>;
+  loadTableCols(connId: string, db: string, tables: string[]): Promise<Record<string, string[]>>;
+  loadTableStats(connId: string, db: string): Promise<void>;
   setExpanded(key: string, value: boolean): void;
   select(sel: TreeSel | null): void;
   openTab(tab: NewTab): string;
@@ -63,6 +69,9 @@ interface Store {
 }
 
 export const OBJECTS_TAB = "objects";
+
+/** Above this many tables, column names are fetched per table instead of all at once. */
+const EAGER_COLUMNS_LIMIT = 2000;
 
 export const objKey = (connId: string, db: string) => `${connId}\u0000${db}`;
 
@@ -87,6 +96,8 @@ export const useStore = create<Store>((set, get) => ({
   objects: {},
   loadingObjects: {},
   schemaCols: {},
+  tableStats: {},
+  loadingStats: {},
   expanded: {},
   selected: null,
   tabs: [],
@@ -194,6 +205,7 @@ export const useStore = create<Store>((set, get) => ({
       set((s) => ({
         objects: { ...s.objects, [key]: objs },
         schemaCols: force ? { ...s.schemaCols, [key]: undefined } : s.schemaCols,
+        tableStats: force ? { ...s.tableStats, [key]: undefined } : s.tableStats,
       }));
       return objs;
     } catch (e) {
@@ -205,13 +217,48 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async loadSchemaCols(connId, db) {
+    // Small schemas: fetch every column up front so completion is instant.
+    // Large ones are filled per table by loadTableCols when first referenced.
     const key = objKey(connId, db);
-    if (get().schemaCols[key]) return;
+    const objs = get().objects[key];
+    if (get().schemaCols[key] || !objs || objs.tables.length + objs.views.length > EAGER_COLUMNS_LIMIT) return;
     try {
       const cols = await api.schemaColumns(connId, db);
-      set((s) => ({ schemaCols: { ...s.schemaCols, [key]: cols } }));
+      set((s) => ({ schemaCols: { ...s.schemaCols, [key]: { ...cols, ...s.schemaCols[key] } } }));
     } catch {
       /* autocompletion is best effort */
+    }
+  },
+
+  async loadTableCols(connId, db, tables) {
+    const key = objKey(connId, db);
+    const have = get().schemaCols[key] ?? {};
+    const missing = tables.filter((t) => !(t in have));
+    if (missing.length) {
+      try {
+        const cols = await api.schemaColumns(connId, db, missing);
+        // Remember misses too, so unknown names are not fetched again.
+        const fetched = Object.fromEntries(missing.map((t) => [t, cols[t] ?? []]));
+        set((s) => ({ schemaCols: { ...s.schemaCols, [key]: { ...s.schemaCols[key], ...fetched } } }));
+      } catch {
+        return {};
+      }
+    }
+    const all = get().schemaCols[key] ?? {};
+    return Object.fromEntries(tables.map((t) => [t, all[t] ?? []]));
+  },
+
+  async loadTableStats(connId, db) {
+    const key = objKey(connId, db);
+    if (get().tableStats[key] || get().loadingStats[key]) return;
+    set((s) => ({ loadingStats: { ...s.loadingStats, [key]: true } }));
+    try {
+      const list = await api.tableStats(connId, db);
+      set((s) => ({ tableStats: { ...s.tableStats, [key]: Object.fromEntries(list.map((t) => [t.name, t])) } }));
+    } catch (e) {
+      toast("读取表统计信息失败: " + errorText(e), "error");
+    } finally {
+      set((s) => ({ loadingStats: { ...s.loadingStats, [key]: false } }));
     }
   },
 

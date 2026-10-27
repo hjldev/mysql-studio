@@ -62,8 +62,14 @@ pub async fn schema_columns(
     state: S<'_>,
     conn_id: String,
     db: String,
+    tables: Option<Vec<String>>,
 ) -> Res<std::collections::BTreeMap<String, Vec<String>>> {
-    state.schema_columns(&conn_id, &db).await
+    state.schema_columns(&conn_id, &db, tables).await
+}
+
+#[tauri::command]
+pub async fn table_stats(state: S<'_>, conn_id: String, db: String) -> Res<Vec<TableMeta>> {
+    state.table_stats(&conn_id, &db).await
 }
 
 #[tauri::command]

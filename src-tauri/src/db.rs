@@ -319,22 +319,21 @@ impl AppState {
         conn.query::<String, _>("SHOW DATABASES").await.es()
     }
 
+    /// Object names for the tree. Tables and views come from `SHOW FULL TABLES`,
+    /// which avoids the per-table statistics that make information_schema.TABLES
+    /// slow on schemas with tens of thousands of tables; see `table_stats`.
     pub async fn list_objects(&self, conn_id: &str, db: &str) -> Res<DbObjects> {
         let mut conn = self.get_conn(conn_id).await?;
-        let rows: Vec<Row> = conn
-            .exec(
-                "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH, \
-                 AUTO_INCREMENT, CREATE_TIME, UPDATE_TIME, TABLE_COLLATION, TABLE_COMMENT \
-                 FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME",
-                (db,),
-            )
+        let mut rows: Vec<(String, String)> = conn
+            .query(format!("SHOW FULL TABLES FROM {}", quote_ident(db)))
             .await
             .es()?;
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
         let mut tables = Vec::new();
         let mut views = Vec::new();
-        for r in rows {
-            let meta = table_meta(&r);
-            if meta.kind == "VIEW" || meta.kind == "SYSTEM VIEW" {
+        for (name, kind) in rows {
+            let meta = TableMeta::named(name, kind);
+            if meta.kind.contains("VIEW") {
                 views.push(meta);
             } else {
                 tables.push(meta);
@@ -513,20 +512,41 @@ impl AppState {
     }
 
     /// Table -> column names for every table in `db` (used for autocompletion).
-    pub async fn schema_columns(
-        &self,
-        conn_id: &str,
-        db: &str,
-    ) -> Res<std::collections::BTreeMap<String, Vec<String>>> {
+    /// Size, row count, engine etc. for every table and view in `db` (slow on huge schemas).
+    pub async fn table_stats(&self, conn_id: &str, db: &str) -> Res<Vec<TableMeta>> {
         let mut conn = self.get_conn(conn_id).await?;
-        let rows: Vec<(String, String)> = conn
+        let rows: Vec<Row> = conn
             .exec(
-                "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS \
-                 WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION",
+                "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH, \
+                 AUTO_INCREMENT, CREATE_TIME, UPDATE_TIME, TABLE_COLLATION, TABLE_COMMENT \
+                 FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?",
                 (db,),
             )
             .await
             .es()?;
+        Ok(rows.iter().map(table_meta).collect())
+    }
+
+    /// Column names per table (for autocompletion), for all of `db` or only `tables`.
+    pub async fn schema_columns(
+        &self,
+        conn_id: &str,
+        db: &str,
+        tables: Option<Vec<String>>,
+    ) -> Res<std::collections::BTreeMap<String, Vec<String>>> {
+        let mut conn = self.get_conn(conn_id).await?;
+        let mut sql = String::from(
+            "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?",
+        );
+        let mut params: Vec<Value> = vec![db.into()];
+        if let Some(tables) = tables.filter(|t| !t.is_empty()) {
+            sql.push_str(" AND TABLE_NAME IN (");
+            sql.push_str(&vec!["?"; tables.len()].join(", "));
+            sql.push(')');
+            params.extend(tables.into_iter().map(Value::from));
+        }
+        sql.push_str(" ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        let rows: Vec<(String, String)> = conn.exec(sql, Params::Positional(params)).await.es()?;
         let mut map = std::collections::BTreeMap::<String, Vec<String>>::new();
         for (t, c) in rows {
             map.entry(t).or_default().push(c);
@@ -676,7 +696,11 @@ pub(crate) async fn show_create(conn: &mut Conn, db: &str, name: &str, kind: &st
         .columns_ref()
         .iter()
         .position(|c| c.name_str().to_lowercase() == target)
-        .unwrap_or(if kind == "TABLE" || kind == "VIEW" { 1 } else { 2 });
+        .unwrap_or(if kind == "TABLE" || kind == "VIEW" {
+            1
+        } else {
+            2
+        });
     let ddl = get_opt(&row, idx).unwrap_or_default();
     if ddl.is_empty() {
         return Err("无权限查看该对象的定义".into());

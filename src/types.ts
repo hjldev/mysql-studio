@@ -52,18 +52,19 @@ export interface ExecuteResponse {
   database: string | null;
 }
 
+/** Name listings carry only name/kind; the rest comes from `tableStats`. */
 export interface TableMeta {
   name: string;
   kind: string;
-  engine: string | null;
-  rows: number | null;
-  dataLength: number | null;
-  indexLength: number | null;
-  autoIncrement: number | null;
-  createTime: string | null;
-  updateTime: string | null;
-  collation: string | null;
-  comment: string;
+  engine?: string | null;
+  rows?: number | null;
+  dataLength?: number | null;
+  indexLength?: number | null;
+  autoIncrement?: number | null;
+  createTime?: string | null;
+  updateTime?: string | null;
+  collation?: string | null;
+  comment?: string;
 }
 
 export interface RoutineMeta {

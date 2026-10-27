@@ -27,6 +27,7 @@ pub fn run() {
             commands::list_objects,
             commands::table_structure,
             commands::schema_columns,
+            commands::table_stats,
             commands::get_ddl,
             commands::list_charsets,
             commands::execute_query,

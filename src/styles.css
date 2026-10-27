@@ -294,9 +294,14 @@ body.resizing-row * {
   flex: 1;
   overflow: auto;
   padding-bottom: 12px;
+  outline: none;
 }
 
 .tree-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   height: 24px;
@@ -1243,53 +1248,66 @@ body.resizing-row * {
 
 /* ---------- objects panel ---------- */
 
-.objects-table-wrap {
+.objects-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-
-.objects-table {
-  border-collapse: collapse;
-  width: 100%;
   font-size: 12.5px;
 }
 
-.objects-table th {
+.objects-head,
+.objects-row {
+  display: grid;
+  width: 100%;
+}
+
+.objects-head {
   position: sticky;
   top: 0;
+  z-index: 1;
   background: var(--bg-2);
-  text-align: left;
-  font-weight: 600;
-  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.objects-head > div {
+  padding: 6px 10px;
   border-right: 1px solid var(--border-2);
   white-space: nowrap;
+  overflow: hidden;
   cursor: default;
 }
 
-.objects-table th:hover {
+.objects-head > div:hover {
   background: var(--hover);
 }
 
-.objects-table td {
-  padding: 4px 10px;
+.objects-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 26px;
   border-bottom: 1px solid var(--border-2);
+  cursor: default;
+}
+
+.objects-row > div {
+  padding: 0 10px;
+  line-height: 25px;
   white-space: nowrap;
-  max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.objects-table td.num {
+.objects-row > div.num {
   text-align: right;
 }
 
-.objects-table tr:hover td {
+.objects-row:hover {
   background: var(--hover);
 }
 
-.objects-table tr.sel td {
+.objects-row.sel {
   background: var(--sel);
 }
 

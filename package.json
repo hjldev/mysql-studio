@@ -11,6 +11,7 @@
     "bridge": "cargo run --manifest-path src-tauri/Cargo.toml --bin web-bridge --features web-bridge"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",

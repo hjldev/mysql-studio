@@ -9,6 +9,7 @@ import type {
   RowChange,
   ServerInfo,
   TableData,
+  TableMeta,
   TableStructure,
   TaskSummary,
 } from "./types";
@@ -47,8 +48,9 @@ export const api = {
   listObjects: (connId: string, db: string) => call<DbObjects>("list_objects", { connId, db }),
   tableStructure: (connId: string, db: string, table: string) =>
     call<TableStructure>("table_structure", { connId, db, table }),
-  schemaColumns: (connId: string, db: string) =>
-    call<Record<string, string[]>>("schema_columns", { connId, db }),
+  schemaColumns: (connId: string, db: string, tables?: string[]) =>
+    call<Record<string, string[]>>("schema_columns", { connId, db, tables: tables ?? null }),
+  tableStats: (connId: string, db: string) => call<TableMeta[]>("table_stats", { connId, db }),
   getDdl: (connId: string, db: string, name: string, kind: ObjectKind) =>
     call<string>("get_ddl", { connId, db, name, kind }),
   listCharsets: (connId: string) => call<Charset[]>("list_charsets", { connId }),

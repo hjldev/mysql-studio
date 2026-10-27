@@ -1,3 +1,4 @@
+import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { MySQL, sql as sqlLang } from "@codemirror/lang-sql";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
@@ -46,7 +47,6 @@ const DDL_RE = /^\s*(create|alter|drop|rename|truncate)\b/im;
 export function QueryTab({ tab, active }: { tab: QueryTabT; active: boolean }) {
   const dark = useDarkMode();
   const databases = useStore((s) => s.conn[tab.connId]?.databases ?? []);
-  const schema = useStore((s) => (tab.database ? s.schemaCols[objKey(tab.connId, tab.database)] : undefined));
   const objects = useStore((s) => (tab.database ? s.objects[objKey(tab.connId, tab.database)] : undefined));
   const [doc, setDoc] = useState(tab.sql);
   const [running, setRunning] = useState(false);
@@ -59,8 +59,21 @@ export function QueryTab({ tab, active }: { tab: QueryTabT; active: boolean }) {
   const runRef = useRef<(mode: "auto" | "current") => void>(() => {});
 
   useEffect(() => {
-    if (tab.database) useStore.getState().loadSchemaCols(tab.connId, tab.database);
+    if (!tab.database) return;
+    const s = useStore.getState();
+    if (!objects) s.loadObjects(tab.connId, tab.database);
+    else s.loadSchemaCols(tab.connId, tab.database);
   }, [tab.connId, tab.database, objects]);
+
+  // Read by the column completion source, which outlives individual renders.
+  const ctxRef = useRef({ connId: tab.connId, db: tab.database, names: new Map<string, string>() });
+  const names = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of objects?.tables ?? []) m.set(t.name.toLowerCase(), t.name);
+    for (const t of objects?.views ?? []) m.set(t.name.toLowerCase(), t.name);
+    return m;
+  }, [objects]);
+  ctxRef.current = { connId: tab.connId, db: tab.database, names };
 
   useEffect(() => {
     if (!running) return;
@@ -106,11 +119,13 @@ export function QueryTab({ tab, active }: { tab: QueryTabT; active: boolean }) {
   runRef.current = run;
 
   const extensions = useMemo(() => {
-    const tables: Record<string, string[]> = { ...(schema ?? {}) };
-    for (const t of objects?.tables ?? []) tables[t.name] ??= [];
-    for (const t of objects?.views ?? []) tables[t.name] ??= [];
+    // Only table names go into the static schema; columns come from columnCompletion.
+    const tables: Record<string, string[]> = {};
+    for (const t of objects?.tables ?? []) tables[t.name] = [];
+    for (const t of objects?.views ?? []) tables[t.name] = [];
     return [
       sqlLang({ dialect: MySQL, schema: tables, upperCaseKeywords: true }),
+      MySQL.language.data.of({ autocomplete: (cx: CompletionContext) => columnCompletion(cx, ctxRef.current) }),
       Prec.highest(
         keymap.of([
           { key: "Mod-Enter", run: () => (runRef.current("auto"), true) },
@@ -120,7 +135,7 @@ export function QueryTab({ tab, active }: { tab: QueryTabT; active: boolean }) {
       ),
       EditorView.lineWrapping,
     ];
-  }, [schema, objects]);
+  }, [objects]);
 
   const beautify = () => {
     const v = viewRef.current;
@@ -243,6 +258,41 @@ export function QueryTab({ tab, active }: { tab: QueryTabT; active: boolean }) {
       </div>
     </div>
   );
+}
+
+const NOT_ALIAS = new Set([
+  "where", "on", "using", "join", "left", "right", "inner", "outer", "cross", "natural", "straight_join",
+  "set", "group", "order", "limit", "having", "union", "values", "value", "select", "partition", "for", "window",
+]);
+
+/** alias (lower case) -> table name, from FROM/JOIN/UPDATE/INTO clauses. */
+function tableAliases(sql: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const re = /\b(?:from|join|update|into)\s+(?:`?[\w$]+`?\s*\.\s*)?`?([\w$]+)`?(?:\s+(?:as\s+)?`?([\w$]+)`?)?/gi;
+  for (const m of sql.matchAll(re)) {
+    out.set(m[1].toLowerCase(), m[1]);
+    if (m[2] && !NOT_ALIAS.has(m[2].toLowerCase())) out.set(m[2].toLowerCase(), m[1]);
+  }
+  return out;
+}
+
+/** Completes `table.` / `alias.` with column names, fetching them on first use. */
+async function columnCompletion(
+  cx: CompletionContext,
+  ctx: { connId: string; db: string | null; names: Map<string, string> },
+): Promise<CompletionResult | null> {
+  const m = cx.matchBefore(/`?[\w$]+`?\.`?[\w$]*$/);
+  if (!m || !ctx.db) return null;
+  const dot = m.text.indexOf(".");
+  const qual = m.text.slice(0, dot).replace(/`/g, "").toLowerCase();
+  const doc = cx.state.doc.toString();
+  const target = tableAliases(doc).get(qual) ?? qual;
+  const table = ctx.names.get(target.toLowerCase());
+  if (!table) return null;
+  const cols = (await useStore.getState().loadTableCols(ctx.connId, ctx.db, [table]))[table];
+  if (!cols?.length) return null;
+  const from = m.from + dot + 1 + (m.text[dot + 1] === "`" ? 1 : 0);
+  return { from, options: cols.map((c) => ({ label: c, type: "property", detail: table })), validFor: /^[\w$]*$/ };
 }
 
 function Messages({ results }: { results: QueryResult[] | null }) {

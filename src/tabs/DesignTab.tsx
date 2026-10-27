@@ -398,11 +398,6 @@ export function DesignTab({ tab, active }: { tab: DesignTabT; active: boolean })
               </tr>
             </thead>
             <tbody>
-              <datalist id="table-list">
-                {tables.map((t) => (
-                  <option key={t.name} value={t.name} />
-                ))}
-              </datalist>
               {model.fks.map((x, i) => (
                 <tr key={x.uid} className={i === selFk ? "sel" : ""} onMouseDown={() => setSelFk(i)}>
                   <td className="mark">{i === selFk ? "▶" : ""}</td>
@@ -416,7 +411,16 @@ export function DesignTab({ tab, active }: { tab: DesignTabT; active: boolean })
                     <input value={x.refSchema} onChange={(e) => setFkRow(i, { refSchema: e.target.value })} />
                   </td>
                   <td>
-                    <input value={x.refTable} list="table-list" onChange={(e) => setFkRow(i, { refTable: e.target.value })} />
+                    <input value={x.refTable} list={`table-list-${i}`} onChange={(e) => setFkRow(i, { refTable: e.target.value })} />
+                    {/* Suggest at most 200 matches: a schema may hold tens of thousands of tables. */}
+                    <datalist id={`table-list-${i}`}>
+                      {tables
+                        .filter((t) => t.name.toLowerCase().includes(x.refTable.toLowerCase()))
+                        .slice(0, 200)
+                        .map((t) => (
+                          <option key={t.name} value={t.name} />
+                        ))}
+                    </datalist>
                   </td>
                   <td>
                     <input value={x.refColumns} onChange={(e) => setFkRow(i, { refColumns: e.target.value })} />
